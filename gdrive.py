@@ -37,17 +37,26 @@ def get_drive_service():
             if "scopes" in token_data:
                 token_data["scopes"] = list(token_data["scopes"])
             creds = Credentials.from_authorized_user_info(token_data)
-    except Exception:
-        pass
+            logger.info("GDrive credentials loaded from st.secrets")
+    except Exception as e:
+        logger.error(f"Failed to load GDrive credentials from st.secrets: {e}")
+        import traceback
+        traceback.print_exc()
 
     # Fallback: local token file
     if creds is None:
         token_path = Path(__file__).parent / "token.json"
         if token_path.exists():
             creds = Credentials.from_authorized_user_file(str(token_path))
+            logger.info("GDrive credentials loaded from token.json")
 
     if creds is None:
-        raise RuntimeError("No GDrive credentials found (check st.secrets or token.json)")
+        # Show available secrets keys for debugging
+        try:
+            available = list(st.secrets.keys()) if hasattr(st, 'secrets') else []
+            raise RuntimeError(f"No GDrive credentials found. Available secrets: {available}")
+        except Exception:
+            raise RuntimeError("No GDrive credentials found (check st.secrets or token.json)")
 
     # Refresh if expired
     if creds.expired and creds.refresh_token:
