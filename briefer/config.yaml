@@ -1,0 +1,7 @@
+models:
+  opus:
+    provider: anthropic
+    model: "claude-opus-4-20250514"
+
+input_dir: "../inputs/pge-sedziszow-szczekociny"
+output_dir: "output"
