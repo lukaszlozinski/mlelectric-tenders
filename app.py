@@ -129,22 +129,25 @@ def run_briefer(pdf_files: list, progress_callback=None) -> tuple[dict | None, b
     if progress_callback:
         progress_callback("Wysyłanie dokumentów do AI...")
 
-    # Call API
+    # Call API (streaming required for long Opus requests)
     try:
-        response = client.messages.create(
+        result_parts = []
+        with client.messages.stream(
             model=BRIEFER_MODEL,
             max_tokens=16000,
             temperature=0.1,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": content}],
-        )
+        ) as stream:
+            for text in stream.text_stream:
+                result_parts.append(text)
+            final = stream.get_final_message()
+        raw = "".join(result_parts)
+        inp_tokens = final.usage.input_tokens
+        out_tokens = final.usage.output_tokens
     except Exception as e:
         st.error(f"Błąd API: {e}. Spróbuj ponownie za kilka minut.")
         return None, None, 0.0
-
-    raw = response.content[0].text
-    inp_tokens = response.usage.input_tokens
-    out_tokens = response.usage.output_tokens
     # Opus pricing: $15/MTok input, $75/MTok output
     cost = (inp_tokens * 15 + out_tokens * 75) / 1_000_000
 
