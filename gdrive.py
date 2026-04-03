@@ -52,11 +52,15 @@ def get_drive_service():
 
     if creds is None:
         # Show available secrets keys for debugging
+        debug_info = "unknown"
         try:
-            available = list(st.secrets.keys()) if hasattr(st, 'secrets') else []
-            raise RuntimeError(f"No GDrive credentials found. Available secrets: {available}")
-        except Exception:
-            raise RuntimeError("No GDrive credentials found (check st.secrets or token.json)")
+            import streamlit as st
+            debug_info = f"secrets keys: {list(st.secrets.keys())}"
+            if "GDRIVE_TOKEN" in st.secrets:
+                debug_info += f" | GDRIVE_TOKEN keys: {list(dict(st.secrets['GDRIVE_TOKEN']).keys())}"
+        except Exception as e2:
+            debug_info = f"secrets access error: {e2}"
+        raise RuntimeError(f"No GDrive credentials found. Debug: {debug_info}")
 
     # Refresh if expired
     if creds.expired and creds.refresh_token:
