@@ -43,10 +43,10 @@ load_dotenv(BRIEFER_DIR / ".env", override=True)
 from prompt import SYSTEM_PROMPT, build_pdf_user_prompt
 from docx_writer import generate_briefing_docx
 from reference_matcher import (
-    load_reference_db, match_all_references,
+    match_all_references,
     _extract_tender_requirements, _generate_llm_explanations, write_report_xlsx,
 )
-from gdrive import get_drive_service, list_input_folders, list_folder_pdfs, download_pdf, save_output
+from gdrive import get_drive_service, list_input_folders, list_folder_pdfs, download_pdf, save_output, load_reference_db_from_gdrive
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -180,12 +180,8 @@ def run_briefer(pdf_data_list: list[tuple[str, bytes]], progress_callback=None) 
     return parsed, docx_bytes, cost
 
 
-def run_matcher(tender_data: dict, progress_callback=None) -> tuple[bytes | None, float]:
-    """Run the matcher against reference_db."""
-    if progress_callback:
-        progress_callback("Ładowanie bazy referencji...")
-
-    references = load_reference_db()
+def run_matcher(tender_data: dict, references: list[dict], progress_callback=None) -> tuple[bytes | None, float]:
+    """Run the matcher against preloaded references."""
     if not references:
         st.warning("Baza referencji jest pusta.")
         return None, 0.0
@@ -333,9 +329,16 @@ uploaded_files = st.file_uploader(
 
 st.divider()
 
-# Reference DB status
+# Reference DB status — load from GDrive (cached in session)
 st.header("2. Baza referencji")
-ref_count = len(list(REFERENCE_DB_DIR.glob("*.json"))) if REFERENCE_DB_DIR.exists() else 0
+if "references" not in st.session_state:
+    try:
+        st.session_state.references = load_reference_db_from_gdrive(drive_service)
+    except Exception as e:
+        st.warning(f"Nie udało się załadować referencji z GDrive: {e}")
+        st.session_state.references = []
+
+ref_count = len(st.session_state.references)
 st.info(f"Załadowanych referencji: **{ref_count}**")
 
 st.divider()
@@ -390,6 +393,7 @@ if st.button("🔍 Analizuj przetarg", type="primary", use_container_width=True)
 
         xlsx_bytes, matcher_cost = run_matcher(
             parsed_data,
+            st.session_state.references,
             progress_callback=lambda msg: progress.caption(msg),
         )
 

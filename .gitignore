@@ -4,3 +4,4 @@ __pycache__/
 briefer/.env
 _usage.json
 .streamlit/secrets.toml
+matcher/reference_db/

@@ -17,8 +17,9 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 logger = logging.getLogger(__name__)
 
 # GDrive folder IDs (01_tenders structure)
-TENDERS_ROOT_ID = "13eoikwAQPQkTTymdEQpmXbwu2s7b8gtq"   # 01_tenders/
-INPUTS_FOLDER_ID = "1Y6vnbBYjyjPfIOEgKS2gPBnT5PCqXF6B"   # 01_tenders/inputs/
+TENDERS_ROOT_ID = "13eoikwAQPQkTTymdEQpmXbwu2s7b8gtq"       # 01_tenders/
+INPUTS_FOLDER_ID = "1Y6vnbBYjyjPfIOEgKS2gPBnT5PCqXF6B"      # 01_tenders/inputs/
+REFERENCE_DB_FOLDER_ID = "1xb8t-ITczugNsXuvmRoARdEccvXbGlaQ" # 01_tenders/matcher/reference_db/
 
 
 def get_drive_service():
@@ -161,3 +162,59 @@ def save_output(file_bytes: bytes, filename: str, tender_name: str, mime_type: s
 
     logger.info(f"Uploaded to GDrive: {filename} ({uploaded['id']})")
     return uploaded.get("webViewLink", uploaded["id"])
+
+
+def load_reference_db_from_gdrive(service=None) -> list[dict]:
+    """Load all reference JSON files from GDrive reference_db folder.
+
+    Returns list of parsed JSON dicts (same format as local reference_db/).
+    """
+    if service is None:
+        service = get_drive_service()
+
+    # List all JSON files in reference_db folder
+    results = service.files().list(
+        q=f"'{REFERENCE_DB_FOLDER_ID}' in parents and name contains '.json' and trashed=false",
+        pageSize=100,
+        fields="files(id, name, size)",
+        orderBy="name",
+    ).execute()
+
+    files = results.get("files", [])
+    if not files:
+        logger.warning("No reference JSONs found in GDrive reference_db folder")
+        return []
+
+    # Filter out scan duplicates (SKAN_ORYGINAL when TLUMACZENIE exists)
+    names = {f["name"] for f in files}
+    filtered = []
+    for f in files:
+        if "SKAN_ORYGINAL" in f["name"]:
+            tlum_name = f["name"].replace("SKAN_ORYGINAL", "TLUMACZENIE_PRZYSIEGLE")
+            if tlum_name in names:
+                logger.debug(f"Skipping {f['name']} (translation pair exists)")
+                continue
+        # Skip cache/index files
+        if f["name"].startswith("_"):
+            continue
+        filtered.append(f)
+
+    logger.info(f"Loading {len(filtered)} reference JSONs from GDrive...")
+
+    refs = []
+    for f in filtered:
+        try:
+            request = service.files().get_media(fileId=f["id"])
+            buffer = io.BytesIO()
+            downloader = MediaIoBaseDownload(buffer, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            data = json.loads(buffer.getvalue().decode("utf-8"))
+            data["_db_file"] = f["name"]
+            refs.append(data)
+        except Exception as e:
+            logger.warning(f"Failed to load {f['name']}: {e}")
+
+    logger.info(f"Loaded {len(refs)} references from GDrive")
+    return refs
